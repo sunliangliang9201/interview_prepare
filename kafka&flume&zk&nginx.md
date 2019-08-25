@@ -383,7 +383,14 @@ producer发送initpidRequest给事务协调器获取一个pid。在transaction l
 
 通过producer的commitTransaction或abortTransaction方法来提交或终结事务
 
- 
+---
+
+
+
+#### 13.当数据量非常大时，kafka磁盘不足应该怎么解决？
+
+- 第一种解决方案：动态扩容
+- 第二种解决方案：checkpoint（这个我不知道，也没有查到）
 
  
 
