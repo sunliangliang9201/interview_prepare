@@ -41,7 +41,7 @@
 
 注意前...个题时以这三个表位基础的。
 
-这前50题是直接在别人的博客中摘抄来的。https://www.jianshu.com/p/d6ca0a611fd2
+这前50题是直接在别人的博客中摘抄来的。https://www.jianshu.com/p/d6ca0a611fd2，属于非常非常基础的sql题。后续会把真实的面试中的sql题整理进来。
 
 #### 1.查询“01”课程比“02”课程成绩高的所有学生的学号？
 
@@ -683,18 +683,246 @@ HAVING COUNT(*) > 1;
 
 #### 31.查询1990年出生的学生名单(注：Student表中Sage列的类型是datetime)?
 
+```sql
+SELECT 
+    *
+FROM
+    student
+WHERE
+    sage BETWEEN '1990-01-01 00:00:00' AND '1990-12-31 23:59:59';
+```
 
 
-#### 32、查询每门课程的平均成绩，结果按平均成绩升序排列，平均成绩相同时，按课程号降序排列
-#### 37、查询不及格的课程，并按课程号从大到小排列
-#### 38、查询课程编号为"01"且课程成绩在60分以上的学生的学号和姓名；
-#### 40、查询选修“张三”老师所授课程的学生中，成绩最高的学生姓名及其成绩
-#### 42、查询每门功课成绩最好的前两名
-#### 43、统计每门课程的学生选修人数（超过5人的课程才统计）。要求输出课程号和选修人数，查询结果按人数降序排列，若人数相同，按课程号升序排列
-#### 44、检索至少选修两门课程的学生学号
-#### 45、查询选修了全部课程的学生信息
-#### 46、查询各学生的年龄
-#### 47、查询本周过生日的学生
-#### 48、查询下周过生日的学生
-#### 49、查询本月过生日的学生
-#### 50、查询下月过生日的学生
+
+#### 32.查询每门课程的平均成绩，结果按平均成绩升序排列，平均成绩相同时，按课程号降序排列?
+
+```sql
+SELECT 
+    cid, AVG(score) AS avg_score
+FROM
+    sc
+GROUP BY cid
+ORDER BY avg_score , cid;
+```
+
+
+
+#### 37.查询不及格的课程，并按课程号从大到小排列?
+
+```sql
+SELECT 
+    course.cid, course.cname
+FROM
+    (SELECT 
+        cid
+    FROM
+        sc
+    GROUP BY cid
+    HAVING MIN(score) < 60) t1
+        LEFT JOIN
+    course ON t1.cid = course.cid
+ORDER BY course.cid desc;
+```
+
+
+
+#### 38.查询课程编号为"01"且课程成绩在60分以上的学生的学号和姓名?
+
+```sql
+SELECT 
+    student.sid, student.sname
+FROM
+    (SELECT 
+        sid
+    FROM
+        sc
+    WHERE
+        cid = '01' AND score > 60) t1
+        LEFT JOIN
+    student ON t1.sid = student.sid;
+```
+
+
+
+#### 40.查询选修“张三”老师所授课程的学生中，成绩最高的学生姓名及其成绩?
+
+```sql
+SELECT 
+    *
+FROM
+    teacher
+        LEFT JOIN
+    course ON teacher.tid = course.tid
+        LEFT JOIN
+    sc ON sc.cid = course.cid
+        LEFT JOIN
+    student ON student.sid = sc.sid
+WHERE
+    teacher.tname = '张三'
+ORDER BY sc.score DESC
+LIMIT 1;
+```
+
+
+
+#### 42.查询每门功课成绩最好的前两名?
+
+这个题还用两种方法哈，一般来说直接用窗口即可，但是为了面试官两种方式都写一下吧
+
+```sql
+select student.sname, course.cname, t1.score from
+(SELECT 
+    sid, 
+    cid, 
+    score, 
+    row_number() over(partition by cid order by score desc) as row_num
+FROM
+    sc) t1 left join course on course.cid = t1.cid left join student on student.sid = t1.sid
+    where t1.row_num <=2;
+```
+
+```sql
+SELECT 
+    student.sname, t3.cid, t3.score
+FROM
+    (SELECT 
+        t1.sid, t1.cid, t1.score
+    FROM
+        sc t1
+    WHERE
+        (SELECT 
+                COUNT(1)
+            FROM
+                sc t2
+            WHERE
+                t2.cid = t1.cid AND t2.score >= t1.score) <= 2) t3
+        LEFT JOIN
+    student ON student.sid = t3.sid;
+```
+
+
+
+#### 43.统计每门课程的学生选修人数（超过5人的课程才统计）。要求输出课程号和选修人数，查询结果按人数降序排列，若人数相同，按课程号升序排列?
+
+```sql
+SELECT 
+    cid, COUNT(sid) AS total
+FROM
+    sc
+GROUP BY cid
+HAVING total >= 5
+ORDER BY total DESC , cid;
+```
+
+
+
+#### 44.检索至少选修两门课程的学生学号?
+
+```sql
+SELECT 
+    sid
+FROM
+    sc
+GROUP BY sid
+HAVING COUNT(1) >= 2;
+```
+
+
+
+#### 45.查询选修了全部课程的学生信息?
+
+```sql
+SELECT 
+    sid
+FROM
+    course
+        INNER JOIN
+    sc ON course.cid = sc.cid
+GROUP BY sid
+HAVING COUNT(1) = (SELECT 
+        COUNT(1)
+    FROM
+        course);
+```
+
+
+
+#### 46.查询各学生的年龄?
+
+```sql
+SELECT 
+    sname, YEAR(CURRENT_DATE()) - YEAR(sage) AS age
+FROM
+    student;
+```
+
+
+
+#### 47.查询本周过生日的学生?
+
+```sql
+SELECT 
+    *
+FROM
+    student
+WHERE
+    WEEKOFYEAR(CURRENT_DATE()) = WEEKOFYEAR(sage);
+```
+
+
+
+#### 48.查询上周过生日的学生?
+
+```sql
+SELECT 
+    *
+FROM
+    student
+WHERE
+    WEEKOFYEAR(DATE_ADD(CURRENT_DATE(),INTERVAL 1 WEEK)) = WEEKOFYEAR(sage);
+```
+
+
+
+#### 49.查询本月过生日的学生?
+
+```sql
+SELECT 
+    *
+FROM
+    student
+WHERE
+    MONTH(CURRENT_DATE) = MONTH(sage);
+```
+
+
+
+#### 50.查询上月过生日的学生?
+
+```sql
+SELECT 
+    *
+FROM
+    student
+WHERE
+    MONTH(date_sub(CURRENT_DATE,interval 1 month)) = MONTH(sage);
+```
+
+
+
+> 总结：从以上50个sql题我写到了两点，第一：就是基础的join以及各种分组聚合操作；第二：我学到了rank（） over 和row_number() over这两个函数。
+>
+> 再不考虑数量的情况下我认为基础到现在是没有问题的，那么接下来我将记录面试中的复杂sql以及hivesql的整理。如果可以的话我顺便将sql的计算流程或者是hivesql的计算流程、效率等问题阐述一下。当然了如果能够分析sql的计算流程和性能的话，那就可以进行sql调优了，我现在还没有达到那个水平，毕竟sql是计算机专业的基础。
+
+
+
+
+
+#### 51.一张login表，请求今天登陆过昨天未登录的用户uid？
+
+| uid  | login_date |
+| ---- | ---------- |
+| 001  | 2019-08-25 |
+
+
+
