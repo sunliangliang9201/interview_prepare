@@ -511,17 +511,180 @@ FROM
 
 #### 22.查询所有课程的成绩第2名到第3名的学生信息及该课程成绩?
 
+**注意：**这个问题看似简单，确实非常考验基础的问题！！！因为group by cid之后只能查询聚合结果了，不能查询某一条或者多条记录的！所以这个问题还是有水平的，至少不常写sql的我第一时间没有意识到这个问题嘛，真正写sql时才发现思路不对。那么应该如何实现组内取出多条记录呢？针对组内按照一定顺序取出某些位置的数据有一个很好的函数rank() over和ro w_number() over，关于他俩啥意思在下面介绍。趁此机会学习一下吧。
+
+```sql
+select * from 
+(SELECT 
+    sid,
+    cid,
+    score,
+    rank() over(partition by cid order by score desc) as rank_num
+FROM
+    sc) t1 where t1.rank_num in (2,3);
+```
+
+- rank() over：使用规则是 rank() over(partition by cid order by score desc) as rank_num，意思就是这个rank_num代表cid分组内根据score倒序排序后的顺序num，从0开始 0 1 2...，说白了就是原来表的基础上给每条记录添加一个rank_num字段！！！
+
+  **注意：**rank() over函数处理数据时，相同数值的组内排序num时一致的，那么就有一个问题，当第一名和第二名成绩相同时，rank over会认为他俩都是第一名，我们取第二名时是没有结果的！！！！！
+
+  ```sql
+  select * from
+  (SELECT 
+      sid,
+      cid,
+      score,
+      row_number() over(partition by cid order by score desc) as row_num
+  FROM
+      sc) t1 where t1.row_num in (2,3);
+  ```
+
+- row_number() over:使用规则与ran k() over一样，唯一的区别就在于组内相同数据的组内排序值不同，所以假如第一名和第二名成绩相同，他俩还是第一名和第二名！！
 
 
-#### 23、统计各科成绩各分数段人数：课程编号,课程名称,[100-85],[85-70],[70-60],[0-60]及所占百分比
-#### 24、查询学生平均成绩及其名次
-#### 25、查询各科成绩前三名的记录
-#### 26、查询每门课程被选修的学生数
-#### 27、查询出只选修了一门课程的全部学生的学号和姓名
-#### 28、查询男生、女生人数
-#### 29、查询名字中含有"风"字的学生信息
-#### 30、查询同名同性学生名单，并统计同名人数
-#### 31、查询1990年出生的学生名单(注：Student表中Sage列的类型是datetime)
+
+#### 23.统计各科成绩各分数段人数：课程编号,课程名称,[100-85],[85-70],[70-60],[0-60]及所占百分比？
+
+```sql
+SELECT 
+    cid,
+    COUNT(IF(score BETWEEN 85 AND 100,score,NULL)) / COUNT(1),
+    COUNT(IF(score BETWEEN 70 AND 85, score, NULL)) / COUNT(1),
+    COUNT(IF(score BETWEEN 60 AND 70, score, NULL)) / COUNT(1),
+    COUNT(IF(score BETWEEN 0 AND 60, score, NULL)) / COUNT(1)
+FROM
+    sc
+GROUP BY cid
+```
+
+**注意：**between and 函数要求小的在前，大的在后，如果score bewteen 100 and 85的话，是没有结果的。要注意哦！
+
+
+
+#### 24.查询学生平均成绩及其名次？
+
+```sql
+select 
+	*, 
+    row_number() over(order by t1.avg_score desc) 
+from 
+	(select 
+		sid, 
+		avg(score) as avg_score 
+	from 
+		sc 
+	group by sid) t1;
+```
+
+
+
+#### 25.查询各科成绩前三名的记录？
+
+**哎呦喂**想啥来啥——刚才在介绍rank over和rownumber over的时候我本想说一下如果不用这两个函数如何实现topN的结果集，说曹操曹操就到。首先我们用rank或者rownumber来实现每科前三名。
+
+```sql
+select * from
+(SELECT 
+    sid, cid, score, row_number() over(partition by cid order by score desc) as row_num
+FROM
+    sc) t1 where t1.row_num <= 3;
+```
+
+下面我们用第二种方式来实现：
+
+思想：这种思路就是，前三名，对于每一条记录我们要保证比这条记录的>=score的最多有三个，也就是保证了这条记录是前三甲！
+
+```sql
+SELECT 
+    sid, cid, score
+FROM
+    sc t1
+WHERE
+    (SELECT 
+            COUNT(1)
+        FROM
+            sc t2
+        WHERE
+            t1.cid = t2.cid AND t1.score <= t2.score) <= 3
+ORDER BY cid , score DESC;
+```
+
+
+
+#### 26.查询每门课程被选修的学生数?
+
+```sql
+SELECT 
+    course.cid, COUNT(sid)
+FROM
+    course
+        LEFT JOIN
+    sc ON course.cid = sc.cid
+GROUP BY cid;
+```
+
+
+
+#### 27.查询出只选修了一门课程的全部学生的学号和姓名?
+
+```sql
+SELECT 
+    sid, sname
+FROM
+    student
+WHERE
+    sid IN (SELECT 
+            sid
+        FROM
+            sc
+        GROUP BY sid
+        HAVING COUNT(cid) = 1);
+```
+
+
+
+#### 28.查询男生、女生人数?
+
+```sql
+SELECT 
+    ssex, COUNT(ssex)
+FROM
+    student
+GROUP BY ssex;
+```
+
+
+
+#### 29.查询名字中含有"风"字的学生信息?
+
+```sql
+SELECT 
+    *
+FROM
+    student
+WHERE
+    sname LIKE '%风%';
+```
+
+
+
+#### 30.查询同名同性学生名单，并统计同名人数?
+
+```sql
+SELECT 
+    sname, COUNT(*)
+FROM
+    student
+GROUP BY sname
+HAVING COUNT(*) > 1;
+```
+
+
+
+#### 31.查询1990年出生的学生名单(注：Student表中Sage列的类型是datetime)?
+
+
+
 #### 32、查询每门课程的平均成绩，结果按平均成绩升序排列，平均成绩相同时，按课程号降序排列
 #### 37、查询不及格的课程，并按课程号从大到小排列
 #### 38、查询课程编号为"01"且课程成绩在60分以上的学生的学号和姓名；
