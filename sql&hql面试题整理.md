@@ -1161,11 +1161,12 @@ GROUP BY depId;
 **如果做出来的这个题，面试官可能再问一句，如果从后表转换为之前的表（列转行）————方法就是union！！**
 
 ```sql
+select * from
 (select depId, '一月' as monthId, 一月 as grade from table1)union
 (select depId, '二月' as monthId, 二月 as grade from table1)union
 (select depId, '三月' as monthId, 三月 as grade from table1)union
 ....
-(select depId, '十二月' as monthId, 十二月 as grade from table1)union
+(select depId, '十二月' as monthId, 十二月 as grade from table1))
 order by depId;
 ```
 
@@ -1244,7 +1245,72 @@ where a.name < b.name;
 
 
 
-#### 60.行转列的简单一题(360)？
+#### 60.整理一下行列转换的问题？
+
+为什么要单独说一下呢？因为上面遇到了但是没有整理，这里整理一下，以后遇到了就不用再说了。我在网上找了很多mysql的行列转置的问题，千篇一律！！！跟56题是一样的！！
+
+下面就从行转列、列转行来总结一下吧。其实上面说了，行转列用聚合函数、列转行用union。
+
+- 行转列
+
+数据就用上面50基础题的那四个表，想要得到的结果如下
+
+| 姓名 | 数学 | 语文               | 英语 |
+| ---- | ---- | ------------------ | ---- |
+| 赵雷 | 80   | 90                 | 100  |
+| 张三 | 65   | 0（没有则认为是0） | 40   |
+
+```sql
+select student.sname, t1.语文,t1.数学,t1.英语 from
+(select 
+	sc.sid,
+    max(case when course.cname = '语文' then sc.score else 0 end) as "语文",
+    max(case when course.cname = '数学' then sc.score else 0 end) as "数学",
+    max(case when course.cname = '英语' then sc.score else 0 end) as "英语"
+from sc
+left join course
+on course.cid = sc.cid
+group by sc.sid) t1 left join student on student.sid = t1.sid;
+```
+
+简单说就是分组+聚合函数
+
+- 列转行
+
+如果我们要从上面这个表反推回sc表怎么办？
+
+```sql
+select * from
+((select sname, '语文' as cname, 语文 as score from sc2) union
+(select sname, '数学' as cname, 数学 as score from sc2) union
+(select sname, '英语' as cname, 英语 as score from sc2)) t1
+where t1.score <> 0
+order by t1.sname;
+```
+
+说白了就是用union
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## hive sql部分
+
+#### 1.
+
+
+
+
 
 原表（渠道有xyz，广告商有abcd）
 
@@ -1267,15 +1333,11 @@ where a.name < b.name;
 
 这里直接转置了！
 
-```sql
-
-```
 
 
 
 
-
-#### 61.行转列的复杂一题(360)？
+#### 行转列的复杂一题(360)？
 
 原表（渠道有xyz，广告商有abcd）
 
@@ -1287,19 +1349,7 @@ where a.name < b.name;
 
 变为上一题中的样子
 
-```sql
 
-```
-
-
-
-
-
-
-
-## hive sql部分
-
-#### 1.
 
 
 
