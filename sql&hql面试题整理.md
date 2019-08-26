@@ -918,11 +918,365 @@ WHERE
 
 
 
-#### 51.一张login表，请求今天登陆过昨天未登录的用户uid？
+#### 51.一张login表，请求今天登陆过昨天未登录的用户uid(头条)？
 
 | uid  | login_date |
 | ---- | ---------- |
 | 001  | 2019-08-25 |
+
+```sql
+SELECT 
+    uid
+FROM
+    login
+WHERE
+    login_date BETWEEN '2019-08-26 00:00:00' AND '2019-08-26 23:59:59'
+        AND uid NOT IN (SELECT 
+            uid
+        FROM
+            login
+        WHERE
+            login_date BETWEEN '2019-08-25 00:00:00' AND '2019-08-25 23:59:59');
+```
+
+```sql
+SELECT 
+    t1.uid
+FROM
+    (SELECT 
+        uid
+    FROM
+        login
+    WHERE
+        login_date BETWEEN '2019-08-26 00:00:00' AND '2019-08-26 23:59:59') t1
+        LEFT JOIN
+    (SELECT 
+        uid
+    FROM
+        login
+    WHERE
+        login_date BETWEEN '2019-08-25 00:00:00' AND '2019-08-25 23:59:59') t2 ON t1.uid = t2.uid
+WHERE
+    t2.uid IS NULL;
+```
+
+
+
+#### 52.组内聚合问题？
+
+| rq         | shengfu |
+| ---------- | ------- |
+| 2005-05-09 | 胜      |
+| 2005-05-09 | 负      |
+| 2005-05-09 | 胜      |
+| 2005-05-10 | 负      |
+
+把上表转换为如下
+
+| rq         | 胜   | 负   |
+| ---------- | ---- | ---- |
+| 2005-05-09 | 2    | 1    |
+| 2005-05-10 | 0    | 1    |
+
+- 第一种方案：
+
+```sql
+SELECT 
+    rq,
+    COUNT(IF(shengfu = '胜', 1, NULL)) AS 胜,
+    COUNT(IF(shengfu = '负', 1, NULL)) AS 负
+FROM
+    tmp
+GROUP BY rq;
+```
+
+```sql
+SELECT 
+    rq,
+    count(case when shengfu = '胜' then 1 else null end) AS 胜,
+    count(case when shengfu = '负' then 1 else null end) AS 负
+FROM
+    tmp
+GROUP BY rq;
+```
+
+**注意：**其实我想说的问题是这里，如果我们把count变成sum，可以吗？？？？
+
+答案是可以的但是要注意一点就是sum是加和，count是计数，所以用sum的前提条件是数值，比如前面50个基础题中有count(if(sid = '01', sid, null))这个函数，如果用sum肯定是不行的，sid不能加和的。那么换一句话说如果用sum怎么做？
+
+```sql
+SELECT 
+    rq,
+    sum(case when shengfu = '胜' then 1 else 0 end) AS 胜,
+    sum(case when shengfu = '负' then 1 else 0 end) AS 负
+FROM
+    tmp
+GROUP BY rq;
+```
+
+```sql
+SELECT 
+    rq,
+    sum(IF(shengfu = '胜', 1, NULL)) AS 胜,
+    sum(IF(shengfu = '负', 1, NULL)) AS 负
+FROM
+    tmp
+GROUP BY rq;
+```
+
+总结一句话就是，聚合函数的应用需要看类型，一般来说没有问题的。
+
+- 第二种方案
+
+```sql
+SELECT 
+    ifnull(t1.rq, t2.rq), ifnull(t1.胜, 0), ifnull(t2.负, 0)
+FROM
+    (SELECT 
+        rq, COUNT(1) AS 胜
+    FROM
+        tmp
+    WHERE
+        shengfu = '胜'
+    GROUP BY rq) t1
+        JOIN
+    (SELECT 
+        rq, COUNT(1) AS 负
+    FROM
+        tmp
+    WHERE
+        shengfu = '负'
+    GROUP BY rq) t2 ON t1.rq = t2.rq;
+```
+
+
+
+#### 53.请教一个面试中遇到的SQL语句的查询问题表中有A B C三列,用SQL语句实现：当A列大于B列时选择A列否则选择B列，当B列大于C列时选择B列否则选择C列?
+
+```sql
+SELECT 
+    IF(A > B, A, B), IF(B > C, B, C)
+FROM
+    tmp2;
+```
+
+```sql
+SELECT 
+    case when A > B then A  when A =B then B else B end,
+    case when B > C then B else C end
+FROM
+    tmp2;
+```
+
+**注意：**其实这个题我想说的是一下三个函数
+
+if(condition, 'true', 'false')：如果condition成立则返回第二个参数，否则返回第三个参数
+
+ifnull(A ,B)：如果A是null的话返回B，否则就是A，这种应用在判断null，比如join的时候
+
+case when condition2 then A when condition2 B else C：它是实现多重逻辑判断的方式！
+
+
+
+#### 54.一张表有一个sendtime字段（datetime），请找出当天的所有记录？
+
+假设有字段如下uid,uname,sendtime
+
+```sql
+select * from tmp3 where datediff(sendtime, now())=0;
+```
+
+想要说的是datediff函数，表示两个日期相减返回相差的天数！
+
+
+
+#### 55.有一张表，里面有3个字段：语文，数学，英语。其中有3条记录分别表示语文70分，数学80分，英语58分，请用一条sql语句查询出这三条记录并按以下条件显示出来？  
+
+ 大于或等于80表示优秀，大于或等于60表示及格，小于60分表示不及格。
+
+| 语文 | 数学   | 英语 |
+| ---- | ------ | ---- |
+| 及格 | 不及格 | 及格 |
+
+```sql
+select
+(case when 语文>=80 then '优秀'
+        when 语文>=60 then '及格'
+else '不及格') as 语文,
+(case when 数学>=80 then '优秀'
+        when 数学>=60 then '及格'
+else '不及格') as 数学,
+(case when 英语>=80 then '优秀'
+        when 英语>=60 then '及格'
+else '不及格') as 英语,
+from table
+```
+
+
+
+#### 56.请用一个sql语句得出结果从table1中取出如table2所列格式数据?
+
+table1
+
+| monthId | depId | grade |
+| ------- | ----- | ----- |
+| 01      | 01    | 100   |
+| 01      | 02    | 80    |
+| 01      | 03    | 110   |
+| 02      | 01    | 150   |
+
+Table2
+
+| depId | 一月 | 二月 | 三月 |
+| ----- | ---- | ---- | ---- |
+| 01    | 100  | 150  | 0    |
+| 02    | 80   | 0    | 0    |
+
+一定要注意——这不是行转列或者列转行，顶多就是一个复杂点的逻辑判断。因为table2的第一个字段还是原来的部门依次向下。所以这不是行和列的置换。
+
+```sql
+SELECT 
+    depId,
+    SUM(CASE WHEN monthId = '01' THEN grade ELSE 0 END) AS '一月',
+    SUM(CASE WHEN monthId = '02' THEN grade ELSE 0 END) AS '二月',
+    SUM(CASE WHEN monthId = '03' THEN grade ELSE 0 END) AS '三月',
+    SUM(CASE WHEN monthId = '04' THEN grade ELSE 0 END) AS '四月',
+    SUM(CASE WHEN monthId = '05' THEN grade ELSE 0 END) AS '五月',
+    SUM(CASE WHEN monthId = '06' THEN grade ELSE 0 END) AS '六月',
+    SUM(CASE WHEN monthId = '07' THEN grade ELSE 0 END) AS '七月',
+    SUM(CASE WHEN monthId = '08' THEN grade ELSE 0 END) AS '八月',
+    SUM(CASE WHEN monthId = '09' THEN grade ELSE 0 END) AS '九月',
+    SUM(CASE WHEN monthId = '10' THEN grade ELSE 0 END) AS '十月',
+    SUM(CASE WHEN monthId = '11' THEN grade ELSE 0 END) AS '十一月',
+    SUM(CASE WHEN monthId = '12' THEN grade ELSE 0 END) AS '十二月'
+FROM
+    table1
+GROUP BY depId;
+```
+
+当然了，这个题还可以把sum直接换成select子查询也可以！实际上函数嘛，感觉就是一个子查询
+
+**因此**：下回再有面试官问这种看似行转列，列转行的问题时，一定要先看看是不是真的行列置换，如果不是那么就用这种方式，分组+聚合函数。
+
+
+
+#### 57.按照顺序累加的sql题如下？
+
+| T    | Salary |
+| ---- | ------ |
+| 2000 | 1000   |
+| 2001 | 2000   |
+| 2002 | 3000   |
+
+
+| T    | Salary |
+| ---- | ------ |
+| 2000 | 1000   |
+|      | 3000   |
+| 2002 | 6000   |
+
+> 我去，有没有点乱！一开始确实思路乱了，但是仔细回想一下，我们不用row_number over函数实现topN的时候是怎么做的？？？？我们用了一个子查询，里面的子查询保证了数据是满足条件的。
+>
+> 所以应用在这里，我们用子查询，在里面把小于或等于某年之前的进行sum即可。
+>
+> 区别在于：topN的时候子查询作为where条件，这里的子查询直接就是字段值。
+
+```sql
+SELECT 
+    t,
+    (SELECT 
+            SUM(salary)
+        FROM
+            table2 t2
+        WHERE
+            t1.t >= t2.t)
+FROM
+    table2 t1;
+```
+
+这种题一般来说都可以用连接来搞定
+
+```sql
+SELECT 
+    t1.t, SUM(t2.salary)
+FROM
+    table2 t1,
+    table2 t2
+WHERE
+    t2.t <= t1.t
+GROUP BY t1.t;
+```
+
+这种table1, table2 这种关联查询说白了就是笛卡尔积。然后加一个条件再分组求和即可。
+
+
+
+#### 58.一个叫department的表，里面只有一个字段name,一共有4条纪录，分别是a,b,c,d,对应四个球对，现在四个球对进行比赛，用一条sql语句显示所有可能的比赛组合？
+
+分析：这是一个组合问题，C42，结果是6场比赛，这个题跟上一题题一摸一样！
+
+```sql
+select a.name, b.name
+from team a, team b
+where a.name < b.name;
+```
+
+如果是分主客场的情况下就是全链接，把where条件换成a.name <> b.name，一共是12场比赛。
+
+
+
+#### 59.从TestDB数据表中查询出所有月份的发生额都比101科目相应月份的发生额高的科目。请注意：TestDB中有很多科目，都有1－12月份的发生额？
+
+这个题用一个连接即可，类似于前面50基础题中查询所有课程都比01号学生分数高的学生。
+
+
+
+#### 60.行转列的简单一题(360)？
+
+原表（渠道有xyz，广告商有abcd）
+
+|      | a    | b    | c    | d    |
+| ---- | ---- | ---- | ---- | ---- |
+| x    | 100  | 300  | 0    | 20   |
+| y    | 50   | 0    | 0    | 40   |
+| z    | 200  | 150  | 100  | 30   |
+
+想要变成如下
+
+|      | x    | y    | z    |
+| ---- | ---- | ---- | ---- |
+| a    | 100  | 50   | 200  |
+| b    | 300  | 0    | 150  |
+| c    | 0    | 0    | 100  |
+| d    | 20   | 40   | 30   |
+
+```sql
+
+```
+
+
+
+
+
+#### 61.行转列的复杂一题(360)？
+
+原表（渠道有xyz，广告商有abcd）
+
+|      | tou zi                 |
+| ---- | ---------------------- |
+| x    | a:100,b:300,d:20       |
+| y    | a:50,d:40              |
+| z    | a:200,b:150,c:100,d:30 |
+
+变为上一题中的样子
+
+```sql
+
+```
+
+
+
+
 
 
 
