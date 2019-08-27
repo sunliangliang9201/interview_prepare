@@ -522,7 +522,7 @@ zookeeper使用zxid来保证事务的全局顺序一致性：
 
 ⑥改变服务器状态
 
-FastLeaderElection：zk选举算法：
+**FastLeaderElection**：zk选举算法：
 
 其实该算法的核心就在与变更投票的过程！
 
@@ -656,7 +656,7 @@ event异步发送watcher的通知事件，也就是server向client发送通知�
 
 ②Watcher触发，比如当server收到某个客户端的setData()操作，它会触发NodeDataChanged事件，zk把这个事件封装为WatcherEvent，包括童稚状态、事件类型、路径znode；然后从watcherTable中查找是否有这个znode的监听watcher，没找到的话无所谓，如果找到了就从WatcherTable和Watch2Paths中删除这个watcher
 
-③调用process方法触发watcher，主要是通过ServerCnxn对应的TCP连接发送Watcher事件通知。
+③调用process方法触发watcher，主要是通过ServerCnxn对应的TCP连接发送Watcher事件通知，client端回调process函数。
 
 ---
 

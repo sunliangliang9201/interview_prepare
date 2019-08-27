@@ -8,6 +8,16 @@ ThreadLocal类中维护一个map，key是每个线程对象，值是对应线程
 
 注意Synchronized和ThreadLocal根本不是一回事！Synchronized用于多线程访问共享变量的安全性，而ThradLocal仅仅是多线程之间数据隔离！
 
+关于threadLocal这里说的还是太浅了，下面从源码入手看一下：
+
+首先：threadlocal为每个线程维护变量副本一点毛病没有，那么具体是如何实现的呢？这就是问题的关键。
+
+TreadLocal类有一个静态内部类叫做ThreadLocalMap类，顾名思义是一个map，key是hreadlocal对象，value是具体要存的值。每次调用threadlocal的set和get方法时，实际商调用的是threadlocalmap中的set和get方法。所以流程如下：创建threadlocal对象tl，然后tl.set(“hello”)，该对象调用getMap(currentThread)方法返回当前线程的threadlocalmap，因为Thread类有threadlocalmap的属性（如果=null，当第一次调用threadlocal.set方法时回创建一个）。因此我们在使用threadlocal的时候实际上操作的是当前线程独立的map对象，该对象key的threadlocal，value是真实的值。
+
+**注意：**threalocalmap中的静态类entry（map的最小元素）中的key时weekreference的，弱引用，也就是说不管内存够不够时都将threadlocal这个对象直接垃圾回收了！！！那么这样有一种情况就是key弱引用的threadlocal被gc回收了，那么key=null了，首先我们丢失了数据了，其次可能会导致oom，因为我们set的value时强饮用的啊，所以threadlocal提供了remove方法来清除不用的变量副本。
+
+**要求：**使用threadlocal时最好用static修饰，这样的话这个threadlocal有强引用了始终不会被回收，不需要的只需要调用remove函数。
+
 ---
 
 
