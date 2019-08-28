@@ -1422,15 +1422,25 @@ client对用户提交的代码进行预处理，client将程序组装成一个jo
 
 #### 6. flink的容错机制详细讲一下？注意与spark的区别？
 
-flink是通过checkpoint机制实现容错，它的原理是不断的生成分布式streaming数据流snapshot快照。在流处理失败时通过这些snapshot可以恢复数据流处理。而flink的快照需要记录两类东西：barrier相关和operation状态相关。
+flink是通过checkpoint机制实现容错，它的原理是不断的生成分布式streaming数据流snapshot快照。在流处理失败时通过这些snapshot可以恢复数据流处理。而flink的快照有两个核心：barrier和state状态保存。barrier是实现checkpoint的机制，而state保存则是通过barrier这种机制进行分布式快照的实现。
 
 ①barrier
 
 barrier是checkpoint的核心，他会当做记录打入数据流，从而将数据流分组，并沿着数据流方向向前推荐，每个barrier会携带一个snapshotID，属于该snapshot的记录会被推向该barrier的前方。所以barrier之后的属于下一个ckeckpoint期间（snapshot中）的数据。然后当中间的operation接收到barrier后，会发送barrier到属于该barrier的snapshot的数据流中，等到sink operation接收到该barrier后会向checkpoint coordinator确认该snapshot，知道所有的sink operation都确认了该snapshot才会认为完成了本次checkpoint或者本次snapshot。
 
-②operation 状态
+**理解**：可以认为barrier这种机制是flink实现分布式快照的手段。那么在这个过程中要记录state快照信息，到底有哪些信息需要序列话呢？
 
-operation状态分为两种：一种是系统状态：一个operator进行计算处理的时候需要对数据进行缓冲，所以数据缓冲区的状态时雨operator相关量的，以窗口操作的缓冲区为例，flink系统会收集和聚合记录数据并放到缓冲区中，知道该缓冲区中的数据被处理完成；另一种是用户自定义状态：它可以是函数中java对象这样简单的变量，也可以是与函数相关的keyvalue状态。（所以知道为什么我们在做长时间数据排序、去重等操作的时候不能用普通的数据结构存储数据了吧，因为checkpoint会记录这些变量。）
+在说state保存之前我们要知道flink的三种方式，其一：jobmanager内存，不建议；其二：hdfs（可以使用）；其三：rocksDB（异步进行分布式快照）。除了第三种其他两种都是同步快照。也就是说用hdfs这种方式快照是会阻塞数据处理的，只有当两个barrier之间数据处理完成并完成快照之后才向下一个task发送数据并打入barrier n。我们不管异步快照，我们现在只说同步快照。
+
+②state状态保存
+
+state状态保存分为两种：一种是用户自定义状态，也就是我们为了实现需求敲的代码（算子），他们来创建和修改的state；另一种就是系统状态：此状态可以认为数据缓冲区，比如window窗口函数，我们要知道数据处理的情况。
+
+**生成的快照现在包含：**
+
+对于每个并行流数据源，创建快照时流中的偏移/位置
+
+对于每个运算符，存储在快照中的状态指针
 
 ③stream aligning
 
@@ -1510,9 +1520,19 @@ on yarn：
 
 
 
-#### 10.请问flink到底是如何保证端到端的exactly once语义的？请从source——算子——算子——sink整个流程说明。可以从kafka的sink或者producer说起。需要注意的是ckeckpoint和offset提交的先后顺序，可以看一下源码。
+#### 10.请问flink到底是如何保证端到端的exactly once语义的？请从source——算子——算子——sink整个流程说明。可以从kafka的sink或者producer说起。需要注意的是ckeckpoint和offset提交的先后顺序，可以看一下源码。貌似与flink的两端提交有关。
 
+可以从两方面阐述：
 
+第一：flink的checkpoint机制可以保证at least once消费语义
+
+第二：flink的两段式提交commit保证了端对端的exactly once消费语义（TwoPhaseCommitSinkFunction）
+
+尤其是在kafka0.11版本开始，支持两段式提交
+
+Flink1.4之前只能在flink内存保证exactly once语义，但是很多时候flink要对接其他系统，那么就要实现commit提交和rollback回滚机制，而分布式系统中两段提交和回滚就是实现方式。因为很多算子包括sink都是并行的，我们不能通过sink的一次commit就完成了最终的commit，因为假如有10的sink，其中9个sink commit了第十个失败了，那么这个过程我们还是无法回滚！！所以需要分布式两段提交策略。
+
+思想：pre-commit + commit，所谓pre-commit指的是第一阶段，也就是chckponit阶段完成时进行pre-commit，如果所有的pre-commit成功，jobmanager会通知所有跟外部系统有联系的比如sink，通知他们进行第二阶段的commit！这就是两段式提交实现的flink的exactly once消费语义。
 
 ---
 
@@ -1526,11 +1546,11 @@ on yarn：
 
 #### 12.你知道UDF吧，请问我们注册UDF到底是每个计算线程一份还是每个executor一份？或者说是多个对象还是共享一个对象？如果答的对的话，面试官会问你如何保证共享呢，这就涉及单例对象的问题了。这个问题有点乱，请自行整理。
 
-
+我们要知道一般来说在使用一个类的时候，一般是要创建对象的，所以我们在sql里使用UDF的时候会创建对象，如果是多线程并行操作sql，那么就是多个UDF对象。那么如何保证一个executer进程中共享一个UDF呢，在scala中就用Object即可。如果是class就写一个单例模式，关于单例模式在java面试题中我会详细整理！
 
 
 
 #### 13.你知道flink可以修改代码恢复吧！但是不是所有的修改都可以恢复哦，请问什么样的代码修改会导致无法flink任务恢复？
 
-
+面试官说：只有当不会改变DAG的修改才会正常恢复！！！有机会试一下。
 
