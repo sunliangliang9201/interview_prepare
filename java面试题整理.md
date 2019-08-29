@@ -268,6 +268,12 @@ d.筛选回收
 
 如果是响应速度优先的话：-XX:+UseConcMarkSweepGC -XX:+UseParNewGC （他俩是配合的）
 
+> 总结:说白了G1收集器没什么好说的，它是分region回收，不分代，所以对于G1收集器是1.8默认的，只需要指定一些jvm参数、并行度即可。而对于1.8之前怎么办？
+>
+> 首先要知道1.8之前年轻代和老年代都要设置gc收集器的，一般来说年轻代只能是并行+阻塞用户进程的方式，因为年轻代的minor gc时间短，无所谓，比如我们用 -XX:+ UseParalellGC或者ParNewGc。但是对于年老代的回收器配置就不同了，因为年老代的gc虽然叫做major gc但是音版来说就是full gc，时间长所以需要尽可能降低延迟，那么有一个叫做CMS的出现了，它的具体操作上面介绍过了。它最高级的地方就是并发标记这个阶段！！！可以并发非阻塞！！当然代价就是算法复杂。
+>
+> 所以我们得出两个结论，要么是ParalellGC + ParalellOldGC组合；要么是ParNewGc + CMS + 碎片整理配置 组合。
+
 ---
 
 
@@ -1000,6 +1006,8 @@ export OPT="-Xmx${LOG_CONSUMER_HEAPSIZE}m  -Xms${LOG_CONSUMER_HEAPSIZE}m  -Xmn3g
 
 -Xmn：年轻代大小，整个堆大小=年轻代+年老带+持久代。持久代一般64M，所以年轻代和年老代就是相对的，官方给出年轻代与年老代的比例是3:5。上面师傅的配置就是这个比例
 
+-XX:+UseAdaptiveSizePolicy jvm会自动调整eden区和suvivor区比例意达到最优的gc效果（最好都带上）
+
 -Xss：设置每个线程的栈的大小jdk5以后默认是1M，以前是256kb。如果是单线程任务，就不用减小这个值，甚至可以加一些。多线程的话可以降低一点。
 
 -XX:PermSize=：持久代初始化大小
@@ -1122,19 +1130,53 @@ Full GC执行频率不算频繁，不低于10分钟1次；
 
 然后可以调整堆大小、年轻代大小比例、年老带大小比例、gc回收器等。
 
+最后我想说的是如果面试官问我了，那么我就给他抛出两个标配即可！！！哈哈哈请看如下
+
+- 追求吞吐量至上，不追求响应速度的情况
+
+```java
+java -Xmx3550m -Xms3550m -Xmn2g -Xss256k -XX:+UseParallelGC -XX:ParallelGCThreads=20 -XX:MaxGCPauseMillis=100 -XX:+UseAdaptiveSizePolicy -XX:+UseParallelOldGC  
+-Xms与-Xmx代表初始和最大堆大小，最好一致
+-Xmn表示年轻代大小，年轻代+年老代=堆大小，所以年老代不用写，比例是5:3（推荐的比例）
+-Xss每个线程栈大小，默认是1M，具体情况具体分析，多线程的话可以降低一点这个值
+-XX:垃圾回收器，追求吞吐量的意思就是垃圾回收速度，很显然，阻塞用户线程并且并行gc是效率最高的
+-XX:后面两个参数用来让jvm自动调整年轻代eden区和suvivor区的大小1⃣️达到要求的maxgcpausemillis
+```
+
+- 追求响应速度，但是不要求吞吐量
+
+```java
+java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:ParallelGCThreads=20 -XX:+UseConcMarkSweepGC -XX:+UseParNewGC -XX:CMSFullGCsBeforeCompaction=5 -XX:+UseCMSCompactAtFullCollection
+使用ConcMarkAwap收集器就是为了更好的响应速度，降低延迟
+与之匹配的只有ParNewGC
+同时使用cms一定要开启空间整理，多少次full gc后进行整理，因为cms有碎片的问题
+```
+
+---
+
+
+
 #### 34.请写一个类似生产者消费者模式，用来判断10万次加锁解锁消耗的时间（快手）？
 
- 
+这个题实际上考的就是生产者消费者模式，以及object.wait() 和object.notifyall()。具体代码请看算法题整理的producerconsumer包下。
 
- 
+我们可以在producer和consumer消费的队列那里加一个公共技术器，如果达到10W次就结束，当然为了满足10次线程切换，生产者中队列.wait()调用条件就是队列长度不为0，而消费者中队列（和生产者是一个队列）.wait()的条件是长度=0。然后都一样了，只要生产了或者消费了就调用notifyall()；
 
- #### 35.java的单例模式说一说有哪些种，并说明特点（头条）？
+---
 
-**注意：**这个题没那么简单哦！！！里面有很多细节问题。
 
- 
 
- 
+ #### 35.java的单例模式懒汉模式--双重加锁检查DCL（Double Check Lock）这种方式威慑呢们要加volatile修饰呢？（头条）
+
+如果不加volatile修饰，那么双重检查机制是线程不安全的，为什么？？？？
+
+首先双检查机制用synchronized修饰的是一部分代码，如果用syncronized修饰整个方法，那么一点问题都没有，因为其他线程根本进不去。但是这里是双检查机制，那么s ynchronized修饰一部分，那么就存在一个问题，线程A在syn内部，B线程虽然进不去，但是它可以执行到第一次检查，此时可能获取到非完整对象！！！！这就出现了不安全的情况。为什么呢？因为对象的创建动作是非原子的，并且关键点是创建对象并赋值给变量这些指令是可以重排序的！有可能是先在内存中开辟了空间并赋值给变量，然后再去初始化一些东西给对象。此时如果B线程恰好赶到指令重排序，那么就会发生不安全了。
+
+那么为什么用volatile修饰变量就可以呢，因为volatile修饰的变量，只要涉及这个变量的指令并不会重排序（但它不会阻碍编译器编译的重排序），这样的话对象的创建和赋值操作只能是按照顺序来，所以B线程要么得到的是null，要么得到的是完整的对象。
+
+---
+
+
 
  
 
