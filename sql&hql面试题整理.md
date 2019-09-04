@@ -1290,6 +1290,26 @@ order by t1.sname;
 
 说白了就是用union
 
+---
+
+
+
+
+
+
+
+
+
+
+
+## sql调优部分
+
+#### 1.distinct和group by的性能问题？（360）
+
+
+
+
+
 
 
 
