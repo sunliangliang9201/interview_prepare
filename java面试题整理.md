@@ -658,7 +658,7 @@ User u= (User)clz.newInstance()
 
 ④LinkedHashMap不安全，继承自hashmap，底层增加一个双向链表，Entry中增加一个上一个指针和下一个指针，同时添加了一个成员变量head指针，这样就可以记录所有put的顺序（默认是put的顺序，可以是读取的顺序）
 
-其实如果想线程安全，那么请用jdk5出现的concurrentHashMap吧，后续会介绍它是采用了分段锁技术，HashMap底层是数组+链表实现的，链表的每个节点是一个Entry键值对的数据结构，查找快，插入也快，每次插入新数据将会指向链表的首部。jdk8之后当链表长度大于8时将会用红黑树替代。
+其实如果想线程安全，那么请用jdk5出现的concurrentHashMap吧，后续会介绍它是采用了分段锁技术，HashMap底层是数组+链表实现的，链表的每个节点是一个Entry键值对的数据结构，查找快，插入也快，每次插入新数据将会指向链表的首部。jdk8之后当链表长度大于8时将会用红黑树替代，**并且也不是分段锁了，这一点一开始没有注意，在下面会整理**。
 
 既然提到了hashmap和红黑树的问题，也要提一下treemap，TreeMap是基于红黑树实现的、是有序的KV组合，同样也是非安全的。
 
@@ -720,11 +720,11 @@ b. 如果能确定所有元素，不会新增，那么可以设计一个不会�
 
 
 
-#### 18.HashMap、ConcurrentHashMap？
+#### 18.HashMap、ConcurrentHashMap？（小米，完美世界）
 
 HashMap不保证线程安全，在高并发修改时会出现死循环，HashTable虽保证线程安全，但是高并发情况写会阻塞读，所以效率很低。
 
-ConcurrentHashMap采用锁分段的技术，一个容器有多个锁，这样就会环境锁竞争的问题。结构上是ConcurrentHashMap是一个Segments的数组，而每个segment就是一个小型的hashMap，HashMap则是Entry链表数组。
+ConcurrentHashMap采用锁分段的技术，一个容器有多个锁，这样就会环境锁竞争的问题。结构上是ConcurrentHashMap是一个Segments的数组，而每个segment就是一个小型的hashMap，HashMap则是Entry链表数组。（注意这里说的分段锁技术是jdk1.8之前）
 
 我觉得有必要说一下hashmap的rehash过程，虽然在redis的rehash那里整理了，但是整理的不全。
 
@@ -733,6 +733,101 @@ ConcurrentHashMap采用锁分段的技术，一个容器有多个锁，这样就
 条件：长度变为2倍，那么该key进行rehash时要么在原位置索引处，要么在原位置索引值+原长度，因为hash对长度取余嘛你懂的。所以我们只需要判断一下就可以知道该key应该放在哪？那么具体怎么判断的呢？不可能时用hash重新计算吧！！！肯定不是，要不不久跟1.8以前的一样了。举个例子说明一下：
 
 ![屏幕快照 2019-08-24 上午10.46.31](https://tva1.sinaimg.cn/large/006y8mN6ly1g6akq3xjldj31ek0s47gg.jpg)
+
+
+
+**注意**：下面开始详细从源码角度来看一下jdk1.8之前和之后Concurrenthashmap的结构变化，jdk1.5出现的这个东西是如何使用分段锁实现并发的。jdk1.8之后又优化了什么呢？
+
+jdk1.5出现的ConcurrentHashMap使用分段锁的技术实现并发：
+
+![img](https://tva1.sinaimg.cn/large/006y8mN6ly1g6ojf9518dj30lc0bc74i.jpg)
+
+从上图可以看出，concurrenthashmap定位一个元素的过程需要进行两次hash操作，第一次hash定位segment，第二次定位到所在链表的头部，也是数组（肯定可以理解吧，理解不了那就别搞了）。这一种结构的带来的副作用是**Hash的过程要比普通的HashMap要长**，但是带来的好处是写操作的时候可以**只对元素所在的Segment进行加锁即可，不会影响到其他的Segment，**这样，在最理想的情况下，ConcurrentHashMap可以最高同时支持Segment数量大小的写操作。
+
+因此可以认为这种结构既保证安全又保证了一定的并发性。不像Collections.synchronizedMap(map),这种悲观锁的思想效率很低。那么下面就看看源码吧。
+
+```java
+static final class Segment<K,V> extends ReentrantLock implements Serializable {
+    transient volatile int count;//segment中元素数
+    transient int modCount;			 //对table大小造成影响的操作的计数
+    transient int threshold;		 //阈值，如果超过就对该segemnt的hashmap进行扩容，这里要注意segments数量确定之后不会改变，扩容发生在segemnt上
+    transient volatile HashEntry<K,V>[] table; //小hashmap
+    final float loadFactor; 		 //负载因子，用于确定阈值
+}
+```
+
+```java
+static final class HashEntry<K,V> {
+    final K key;
+    final int hash;
+    volatile V value;
+    final HashEntry<K,V> next;
+}
+//为什么除了value都是final，那是因为不想改变链表的结构，出现ConcurrentModifycation的情况。
+```
+
+下面说一下get put remove size操作：
+
+- get（不加锁）
+
+Step1:根据hash计算出所在segment，具体请看源码，还是有些技巧的
+
+Step2:简单了，跟普通的hahsmap.get一样了
+
+- put/remove（加锁）
+
+Step1:还是确定segment所在
+
+Step2:对put/remove操作加可重入锁，区别在于put是添加到链表头部，但是remove操作复杂一些：将删除元素之前的元素全部复制一遍，并且是一个反转的（这个太细节了不说了）。
+
+- size（可能加锁）
+
+step1:遍历两次所有的segements的modCount，如果两次都相同，代表期间没发生数据数量变化，直接返回结果
+
+step1:如果发现不同，那么再遍历一次，如果还不同就把所有的segment进行加锁...。
+
+从代码中可以看出segment是继承RetrantLock的，有lock和unlock函数，关于RetrantLock如何实现的，那么请自行查找AQS+CAS。
+
+好了下 面来看看jdk1.8到底是如何优化的？？
+
+![img](https://tva1.sinaimg.cn/large/006y8mN6ly1g6oky586r0j30cl0bqdg2.jpg)
+
+首先 我们已经知道hashmap再1.8之后引入了红黑树。所以原来的hashrntry节点全部换成了Node节点了。
+
+核心：1.8中代码中虽然存在segment，但是segment已经没有任何意义了。所以也不是分段锁的思想了！！所以加锁直接在Node上加同步锁。所以1.8之后锁只会锁定一个链表或者一个树，同时也不需要1.7那样两次hash定位。所以效率更加高效。
+
+```java
+static class Node<K,V> implements Map.Entry<K,V> {
+        final int hash;
+        final K key;
+        volatile V val;
+        volatile Node<K,V> next;
+}
+```
+
+简单说：1.7采用segment+retrantlock+数组+链表的方式，1.8采用synchronized+cas+数组+链表+红黑树
+
+- get（不加锁）
+
+Step1:定位Node节点位置
+
+Step2:判断头节点的key的hash值大于0还是小于0，大于0时链表，小于0时红黑树
+
+- put（加锁）
+
+step1:定位NOde节点位置
+
+step2:如果为空，则cas new一个Node放在那里
+
+step3:如果不为空则判断头节点的hash值大于0还是小于0....不多说了。
+
+Step4:判断是否需要变为红黑树。
+
+
+
+最后再问一个问题，为什么hashmap的size要设置为2的N次方呢？？
+
+如果只回答散列的话，那么可以得到70分，如果再说出加速hash位移计算的话，那就是100分。
 
 ---
 
