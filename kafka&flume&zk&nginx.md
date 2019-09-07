@@ -82,7 +82,7 @@ Follower会不断的向leader拉取最新的数据，当leader有新数据的时
 
 
 
-#### 3.你知道ISR吗，什么情况下会导致ISR列表中的follower见少？
+#### 3.你知道ISR吗，什么情况下会导致ISR列表中的follower见少？（搜狐）
 
 先说明一点，无论是leader和follower都叫做副本！！不然创建topic的时候指定副本个数为1时难道就没有副本吗，leader也是副本
 
@@ -202,7 +202,7 @@ kafka-preferred-replica-election.sh用来均衡leader
 
 
 
-#### 8.你知道kafka的持久化机制的吗？顺序写的优化你是怎么理解的，它是怎么实现的？
+#### 8.你知道kafka的持久化机制的吗？顺序写的优化你是怎么理解的，它是怎么实现的？（百度、完美世界）
 
 Kafka是基于磁盘而不是内存来存储信息的，这种方式乍一看感觉效率肯定低啊，但是实则不然，要知道顺序磁盘写的效率比随机内存写的效率要高。
 
@@ -402,7 +402,7 @@ conrtoller leader信息：get /controller
 
 第二种情况：如果分区数大于消费者数怎么办？默认是一对一消费，有些消费者是空闲的！！
 
-那么如果出现多个consumer负责同一个分区会出现什么情况？就类似与多个线程操作一个对象一样，可能出现由于线程进度的问题导致消费顺序的问题，这也就是为什么kafka采用pull的方式让consumer自己拉数据而不是push，目的就是根据consumer的能力自己来消费方式压力太大或者消费顺序打乱问题。
+**那么如果出现多个consumer负责同一个分区会出现什么情况？就类似与多个线程操作一个对象一样，可能出现由于线程进度的问题导致消费顺序的问题**，这也就是为什么kafka采用pull的方式让consumer自己拉数据而不是push，目的就是根据consumer的能力自己来消费方式压力太大或者消费顺序打乱问题。
 
 针对第一种情况，如果分区数大于消费者，那么就有一个负载均衡的问题，到底分区怎么分配给少量的consumers？
 
@@ -437,7 +437,7 @@ conrtoller leader信息：get /controller
 
 
 
-#### 12.kafka幂等producer和事务是如何实现的？
+#### 12.kafka幂等producer和事务是如何实现的？（头条）
 
 说kafka的幂等性和事务之前需要说一下什么是幂等？什么是事务？
 
@@ -495,12 +495,14 @@ producer发送initpidRequest给事务协调器获取一个pid。在transaction l
 
 
 
-#### 13.当数据量非常大时，kafka磁盘不足应该怎么解决？
+#### 13.当数据量非常大时，kafka磁盘不足应该怎么解决？（快手）
 
 - 第一种解决方案：动态扩容
 - 第二种解决方案：checkpoint（这个我不知道，也没有查到）
 
- 
+---
+
+
 
  
 
@@ -576,7 +578,7 @@ Zookeeper实现很多功能如分布式锁、统一配置、统一命名空间�
 
 
 
-#### 3.zk的选举机制流程？选举算法？
+#### 3.zk的选举机制流程？选举算法？（金山云）
 
 说zk选举之前先说一下问什么选举或者什么状态下选举，选举的条件是什么：
 
@@ -599,6 +601,8 @@ Zookeeper实现很多功能如分布式锁、统一配置、统一命名空间�
 zookeeper使用zxid来保证事务的全局顺序一致性：
 
 当有事务提交时，会把这个事务提交到proposal的事务提交缓存队列中，每个事务都会加上一个zxid，zxid是一个64位的数字，高32位是epoch——表示leader的迭代次数，每次选举都会自增（它和electionepoch还不一样，electionepoch是投票迭代次数），低32位用来递增计数的。所以这就保证了全局事务的顺序一致性。
+
+**注意**：关于zxid的这个值还有一个用处！！！也是金山云的面试题说zk会不会出现脑裂的情况？我一开始想到了两个东西：namenode的ha和es的master选举，namenode是通过隔离的手段避免脑裂，es只是通过配置预防脑裂，不知道是否真的可以避免脑裂。而**zk是真的可以避免脑裂的**！！！为什么？因为所有的事物请求都会有zxid，而上面说了zxid的前32位是leader的选举的epoch，所以新的leader肯定比可能引起脑裂的老的leader的epoch大。
 
 第一种情况：初始化时选举
 
@@ -698,7 +702,7 @@ Zookeeper的核心是原子广播模式，这个机制保证各个server之间�
 
 
 
-#### 5.zookeeper中watcher机制是什么，都有哪些特点呢，用它可以来干嘛，为什么watcher不能是永久的？
+#### 5.zookeeper中watcher机制是什么，都有哪些特点呢，用它可以来干嘛，为什么watcher不能是永久的？（金山云）
 
 聊watcher的话那就说明已经不是单纯的zk集群了，而是涉及zkClient客户端与zk服务端的操作了。（当然了集群中的节点也可能会监听某个znode）
 
@@ -765,6 +769,8 @@ event异步发送watcher的通知事件，也就是server向client发送通知�
 ②Watcher触发，比如当server收到某个客户端的setData()操作，它会触发NodeDataChanged事件，zk把这个事件封装为WatcherEvent，包括童稚状态、事件类型、路径znode；然后从watcherTable中查找是否有这个znode的监听watcher，没找到的话无所谓，如果找到了就从WatcherTable和Watch2Paths中删除这个watcher
 
 ③调用process方法触发watcher，主要是通过ServerCnxn对应的TCP连接发送Watcher事件通知，client端回调process函数。
+
+关于这里的回调问题，我在算法题整理中专门写了。
 
 ---
 
