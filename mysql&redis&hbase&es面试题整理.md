@@ -652,7 +652,15 @@ select name from table where name=’aaa’;
 
 select age,hobits from table where age=’25’;
 
- 
+---
+
+
+
+#### 18.请问你们在用主从复制的时候有哪些情况会导致数据不一致以及是怎么处理数据不一致的问题的呢？
+
+
+
+
 
  
 

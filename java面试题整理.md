@@ -1288,7 +1288,7 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:ParallelGCThreads=20 -XX:+UseConcMa
 
 
 
-#### 36.请问如何实现一个异步任务执行类？请移步算法题吧 
+#### 36.
 
  
 

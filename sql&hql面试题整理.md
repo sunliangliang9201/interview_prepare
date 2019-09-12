@@ -765,7 +765,7 @@ LIMIT 1;
 
 
 
-#### 42.查询每门功课成绩最好的前两名?
+#### 42.查询每门功课成绩最好的前两名?（搜狐）
 
 这个题还用两种方法哈，一般来说直接用窗口即可，但是为了面试官两种方式都写一下吧
 
@@ -1302,15 +1302,43 @@ order by t1.sname;
 
 
 
-## sql调优部分
+## sql优化部分
 
 #### 1.distinct和group by的性能问题？（360）
 
+在做去重时，group by只需要读取分组数据，distinct要读取全部数据。
+
+#### 2.尽可能避免使用in，如果是连续的值可以用bewteen范围查询。
+
+比如select * from table where id in（1，2，3）;
+
+可以变为select * from table where id between 1 and 3;
 
 
 
+#### 3.不要使用反向查询如not in、!=、<>、 is not null，这些都不会走索引的。
+
+对于not in 的优化可以用连接+is null来优化。
+
+比如所有学科都大于80分的学生，用not in很简单，如果用join的话：
+
+select * from table1 a left join (select uid from tabl1 where score < 60) b on a.uid=b.uid where b.uid is null;
 
 
+
+#### 4.不要对条件中的字段进行函数操作。
+
+#### 5.索引字段类型一定要搞清楚，不然不走索引，而且在join时，on条件中两个字段必须类型相同！不然就会数据倾斜了。不会做join匹配。
+
+#### 6.少用or，可以用union来优化，同时能用union all的话不要用union。
+
+or只有or两侧的两个条件都是索引的时候才会走索引，只有一个的时候不会走索引，此时可以通过unoin all来替代。union和union all的区别就是unoin有去重的效果。
+
+
+
+#### 7.模糊查询的左侧匹配原则。复合索引的最左匹配原则。尽量是有索引覆盖。
+
+#### 8.关于in和exists到底用哪个，具体测试来定。一般in后面时小表就用in。
 
 
 
